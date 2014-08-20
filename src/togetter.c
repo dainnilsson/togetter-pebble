@@ -1,8 +1,5 @@
 #include "pebble.h"
 
-#define NUM_MENU_SECTIONS 1
-#define NUM_MENU_ITEMS 3
-
 enum {
   MSG_KEY_HEADER = 0x0,
   MSG_KEY_ITEMS = 0x1,
@@ -14,25 +11,15 @@ typedef struct ListItem {
   uint8_t collected;
 } ListItem;
 
-static char* header = "ToGetter - loading...      ";
-static uint8_t num_items = 0;
-static ListItem *items;
-
 static Window *window;
-
-// This is a menu layer
-// You have more control than with a simple menu layer
 static MenuLayer *menu_layer;
 static GBitmap *icon_checked, *icon_unchecked;
 
-// A callback is used to specify the amount of sections of menu items
-// With this, you can dynamically add and remove sections
-static uint16_t menu_get_num_sections_callback(MenuLayer *menu_layer, void *data) {
-  return NUM_MENU_SECTIONS;
-}
+static char* header = "ToGetter - loading...      ";  // Allocate 16 bytes for name
+static uint8_t num_items = 0;
+static ListItem *items;
 
-// Each section has a number of items;  we use a callback to specify this
-// You can also dynamically add and remove items using this
+// A callback is used to specify the number of rows
 static uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
   return num_items;
 }
@@ -45,7 +32,6 @@ static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t s
 
 // A callback is used to specify the height of a cell
 static int16_t menu_get_cell_height_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  // This is a define provided in pebble.h that you may use for the default height
   return 44;
 }
 
@@ -57,7 +43,9 @@ static void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, ui
 
 // This is the menu item draw callback where you specify what each item should look like
 static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
-  // Use the row to specify which item we'll draw
+  // TODO: Show amount.
+  // TODO: Decrease font and show more rows on screen.
+  // TODO: Make icons smaller.
   ListItem* item = &items[cell_index->row];
   GBitmap* icon = item->collected == 0 ? icon_unchecked : icon_checked;
   menu_cell_basic_draw(ctx, cell_layer, item->name, NULL, icon);
@@ -65,12 +53,11 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
 
 // Here we capture when a user selects a menu item
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  // TODO: Check/Uncheck item
+  // TODO: Update server
   ListItem* item = &items[cell_index->row];
   item->collected = !item->collected;
   
   if(item->collected != 0) {
-    //Select next item
     menu_layer_set_selected_next(menu_layer, false, MenuRowAlignCenter, true);
   }
   
@@ -84,10 +71,11 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *items_tuple = dict_find(iter, MSG_KEY_ITEMS);
 
   if (header_tuple) {
+    // Keep "ToGetter - "
     strncpy(header + 11, header_tuple->value->cstring, 16);
   }
   if (items_tuple) {
-    // num_items, (collected, amount, namelen, name)*
+    // data format: num_items, (collected, amount, namelen, name)*
     char* data = items_tuple->value->cstring;
     uint8_t offset = 0;
     num_items = data[offset++];
@@ -130,21 +118,15 @@ void window_load(Window *window) {
   icon_checked = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MENU_ICON_CHECKED);
   icon_unchecked = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MENU_ICON_UNCHECKED);
   
-  // Now we prepare to initialize the menu layer
-  // We need the bounds to specify the menu layer's viewport size
-  // In this case, it'll be the same as the window's
-  Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_frame(window_layer);
-  
   // Setup items
   items = malloc(num_items * sizeof(ListItem));
 
-  // Create the menu layer
+  Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_frame(window_layer);
   menu_layer = menu_layer_create(bounds);
 
   // Set all the callbacks for the menu layer
   menu_layer_set_callbacks(menu_layer, NULL, (MenuLayerCallbacks){
-    .get_num_sections = menu_get_num_sections_callback,
     .get_num_rows = menu_get_num_rows_callback,
     .get_header_height = menu_get_header_height_callback,
 //    .get_cell_height = menu_get_cell_height_callback,
@@ -159,7 +141,7 @@ void window_load(Window *window) {
   // Add it to the window for display
   layer_add_child(window_layer, menu_layer_get_layer(menu_layer));
   
-  //Start messaging
+  // Start messaging
   app_message_init();
 }
 
