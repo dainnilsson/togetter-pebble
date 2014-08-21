@@ -6,7 +6,7 @@ enum {
 };
 
 typedef struct ListItem {
-  char name[16];
+  uint8_t offset;
   uint8_t amount;
   uint8_t collected;
 } ListItem;
@@ -18,6 +18,7 @@ static GBitmap *icon_checked, *icon_unchecked;
 static char* header = "ToGetter - loading...      ";  // Allocate 16 bytes for name
 static uint8_t num_items = 0;
 static ListItem *items;
+static char* names;
 
 // A callback is used to specify the number of rows
 static uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
@@ -48,7 +49,7 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
   // TODO: Make icons smaller.
   ListItem* item = &items[cell_index->row];
   GBitmap* icon = item->collected == 0 ? icon_unchecked : icon_checked;
-  menu_cell_basic_draw(ctx, cell_layer, item->name, NULL, icon);
+  menu_cell_basic_draw(ctx, cell_layer, names + item->offset, NULL, icon);
 }
 
 // Here we capture when a user selects a menu item
@@ -75,25 +76,12 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
     strncpy(header + 11, header_tuple->value->cstring, 16);
   }
   if (items_tuple) {
-    // data format: num_items, (collected, amount, namelen, name)*
-    char* data = items_tuple->value->cstring;
-    uint8_t offset = 0;
-    num_items = data[offset++];
-    
-    // Allocate new list
+    // data format: num_items | items | names
+    num_items = items_tuple->value->data[0];
     free(items);
-    items = malloc(num_items * sizeof(ListItem));
-    
-    // Parse items
-    uint8_t i;
-    for(i=0; i < num_items; i++) {
-      ListItem* item = &items[i];
-      item->collected = data[offset++];
-      item->amount = data[offset++];
-      uint8_t name_len = data[offset++];
-      strncpy(item->name, &data[offset], name_len);
-      offset += name_len;
-    }
+    items = malloc(items_tuple->length - 1);
+    memcpy(items, items_tuple->value->data + 1, items_tuple->length - 1);
+    names = (char*)(items + num_items);
   }
   
   menu_layer_reload_data(menu_layer);

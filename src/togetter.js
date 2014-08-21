@@ -1,5 +1,27 @@
+/* global removeDiacritics */
+
 var groupId = "YY8h5rM2Z";
-var listId = "StsNkSvIa";
+var listId = "gkI3qzYzX";
+
+function cleanValue(value) {
+  return removeDiacritics(value).substr(0, 16);
+}
+
+var chr = String.fromCharCode;
+
+// Pack items list into binary representation (num_items | struct ListItem* | names)
+function packItems(items) {
+  var struct_arr = "";
+  var names = "";
+  var offset = 0;
+  for(var i=0; i<items.length; i++) {
+    var item = items[i];
+    struct_arr += chr(offset) + chr(item.amount) + chr(item.collected ? 1 : 0);
+    names += cleanValue(item.item) + chr(0);
+    offset = names.length;
+  }
+  return chr(items.length) + struct_arr + names;
+}
 
 function updateList() {
   var req = new XMLHttpRequest();
@@ -9,18 +31,10 @@ function updateList() {
       if(req.status == 200) {
         var resp = JSON.parse(req.responseText);
         var data = {
-          label: removeDiacritics(resp.label),
-          items: String.fromCharCode(resp.items.length)
+          label: cleanValue(resp.label),
+          items: packItems(resp.items)
         };
-        
-        for(var i=0; i<resp.items.length; i++) {
-          var item = resp.items[i];
-          data.items += String.fromCharCode(item.collected ? 1 : 0) +
-            String.fromCharCode(item.amount) +
-            String.fromCharCode(item.item.length) +
-            removeDiacritics(item.item);
-        }
-        
+       
         console.log(JSON.stringify(data));
         Pebble.sendAppMessage(data);
       } else {
