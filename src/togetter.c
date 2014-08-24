@@ -1,14 +1,16 @@
 #include "pebble.h"
 
+#define COLLECTED_MASK 0x80
+
 enum {
-  MSG_KEY_HEADER = 0x0,
-  MSG_KEY_ITEMS = 0x1,
+  MSG_KEY_HEADER = 0,
+  MSG_KEY_ITEMS = 1,
+  MSG_KEY_SELECT = 2
 };
 
 typedef struct ListItem {
   uint8_t offset;
-  uint8_t amount;
-  uint8_t collected;
+  uint8_t combined;
 } ListItem;
 
 static Window *window;
@@ -22,7 +24,7 @@ static char* names;
 
 // A callback is used to specify the number of rows
 static uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
-  return num_items;
+  return num_items == 0 ? 1 : num_items;
 }
 
 // A callback is used to specify the height of the section header
@@ -47,24 +49,60 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
   // TODO: Show amount.
   // TODO: Decrease font and show more rows on screen.
   // TODO: Make icons smaller.
+  if(num_items == 0) {
+    menu_cell_basic_draw(ctx, cell_layer, "[EMPTY]", NULL, NULL);
+    return;
+  }
   ListItem* item = &items[cell_index->row];
-  GBitmap* icon = item->collected == 0 ? icon_unchecked : icon_checked;
+  GBitmap* icon = (COLLECTED_MASK & item->combined) == 0 ? icon_unchecked : icon_checked;
+  uint8_t amount = ~COLLECTED_MASK & item->combined;
   menu_cell_basic_draw(ctx, cell_layer, names + item->offset, NULL, icon);
 }
 
 // Here we capture when a user selects a menu item
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  // TODO: Update server
   ListItem* item = &items[cell_index->row];
-  item->collected = !item->collected;
-  
-  if(item->collected != 0) {
-    menu_layer_set_selected_next(menu_layer, false, MenuRowAlignCenter, true);
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter");
+    return;
+  }
+
+  Tuplet tuple = TupletInteger(MSG_KEY_SELECT, cell_index->row);
+  dict_write_tuplet(iter, &tuple);
+  dict_write_end(iter);
+
+  if(item->combined == 0) {
+    // List select: Do nothing...
+  } else {
+    // Item select
+    item->combined = item->combined ^ COLLECTED_MASK;
+
+    if((COLLECTED_MASK & item->combined) != 0) {
+      menu_layer_set_selected_next(menu_layer, false, MenuRowAlignCenter, true);
+    }
+
+    layer_mark_dirty(menu_layer_get_layer(menu_layer));
   }
   
-  layer_mark_dirty(menu_layer_get_layer(menu_layer));
+  app_message_outbox_send();
 }
 
+//Long click select
+void menu_select_long_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter");
+    return;
+  }
+
+  Tuplet tuple = TupletInteger(MSG_KEY_SELECT, -1);
+  dict_write_tuplet(iter, &tuple);
+  dict_write_end(iter);
+  app_message_outbox_send();
+}
 
 // Messaging
 static void in_received_handler(DictionaryIterator *iter, void *context) {
@@ -85,6 +123,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   }
   
   menu_layer_reload_data(menu_layer);
+  menu_layer_set_selected_index(menu_layer, (MenuIndex) { .row = 0, .section = 0 }, MenuRowAlignCenter, true);
   layer_mark_dirty(menu_layer_get_layer(menu_layer));
 }
 
@@ -121,6 +160,7 @@ void window_load(Window *window) {
     .draw_header = menu_draw_header_callback,
     .draw_row = menu_draw_row_callback,
     .select_click = menu_select_callback,
+    .select_long_click = menu_select_long_callback,
   });
 
   // Bind the menu layer's click config provider to the window for interactivity
