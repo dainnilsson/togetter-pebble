@@ -15,8 +15,8 @@ typedef struct ListItem {
 
 static Window *window;
 static MenuLayer *menu_layer;
-static GBitmap *icon_checked, *icon_unchecked;
 
+static GFont item_font;
 static char* header = "ToGetter - loading...      ";  // Allocate 16 bytes for name
 static uint8_t num_items = 0;
 static ListItem *items;
@@ -35,7 +35,7 @@ static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t s
 
 // A callback is used to specify the height of a cell
 static int16_t menu_get_cell_height_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  return 44;
+  return 26;
 }
 
 // Here we draw what each header is
@@ -54,9 +54,22 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
     return;
   }
   ListItem* item = &items[cell_index->row];
-  GBitmap* icon = (COLLECTED_MASK & item->combined) == 0 ? icon_unchecked : icon_checked;
+  bool collected = (COLLECTED_MASK & item->combined) != 0;
   uint8_t amount = ~COLLECTED_MASK & item->combined;
-  menu_cell_basic_draw(ctx, cell_layer, names + item->offset, NULL, icon);
+  
+  GRect rect = (GRect){ .origin = GPointZero, .size = layer_get_frame((Layer*) cell_layer).size };
+  graphics_context_set_text_color(ctx, GColorBlack);
+  graphics_draw_text(ctx, names + item->offset, item_font, rect, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  if(amount > 1) {
+    char* amount_str = "00";
+    snprintf(amount_str, 2, "%d", amount);
+    graphics_draw_text(ctx, amount_str, item_font, rect, GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+  }
+  if(collected) {
+    rect.origin.y = 12;
+    rect.size.h = 3;
+    graphics_fill_rect(ctx, rect, 0, GCornerNone);
+  }
 }
 
 // Send index to the phone
@@ -149,9 +162,8 @@ static void app_message_init(void) {
 
 // This initializes the menu upon window load
 void window_load(Window *window) {
-  // Load icons
-  icon_checked = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MENU_ICON_CHECKED);
-  icon_unchecked = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_MENU_ICON_UNCHECKED);
+  // Setup fonts
+  item_font = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   
   // Setup items
   items = malloc(num_items * sizeof(ListItem));
@@ -164,7 +176,7 @@ void window_load(Window *window) {
   menu_layer_set_callbacks(menu_layer, NULL, (MenuLayerCallbacks){
     .get_num_rows = menu_get_num_rows_callback,
     .get_header_height = menu_get_header_height_callback,
-//    .get_cell_height = menu_get_cell_height_callback,
+    .get_cell_height = menu_get_cell_height_callback,
     .draw_header = menu_draw_header_callback,
     .draw_row = menu_draw_row_callback,
     .select_click = menu_select_callback,
