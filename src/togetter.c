@@ -59,9 +59,8 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
   menu_cell_basic_draw(ctx, cell_layer, names + item->offset, NULL, icon);
 }
 
-// Here we capture when a user selects a menu item
-void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  ListItem* item = &items[cell_index->row];
+// Send index to the phone
+static void send_index(uint8_t index) {
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   if (iter == NULL) {
@@ -69,9 +68,16 @@ void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *da
     return;
   }
 
-  Tuplet tuple = TupletInteger(MSG_KEY_SELECT, cell_index->row);
+  Tuplet tuple = TupletInteger(MSG_KEY_SELECT, index);
   dict_write_tuplet(iter, &tuple);
   dict_write_end(iter);
+ 
+  app_message_outbox_send();
+}
+
+// Here we capture when a user selects a menu item
+static void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  ListItem* item = &items[cell_index->row];
 
   if(item->combined == 0) {
     // List select: Do nothing...
@@ -85,23 +91,13 @@ void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *da
 
     layer_mark_dirty(menu_layer_get_layer(menu_layer));
   }
-  
-  app_message_outbox_send();
+
+  send_index(cell_index->row);
 }
 
 //Long click select
-void menu_select_long_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
-  if (iter == NULL) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter");
-    return;
-  }
-
-  Tuplet tuple = TupletInteger(MSG_KEY_SELECT, -1);
-  dict_write_tuplet(iter, &tuple);
-  dict_write_end(iter);
-  app_message_outbox_send();
+static void menu_select_long_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  send_index(-1);
 }
 
 // Messaging
@@ -109,13 +105,18 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   Tuple *header_tuple = dict_find(iter, MSG_KEY_HEADER);
   Tuple *items_tuple = dict_find(iter, MSG_KEY_ITEMS);
 
-  if (header_tuple) {
+  bool new_list = false;
+  if (header_tuple && strncmp(header + 11, header_tuple->value->cstring, 16) != 0) {
     // Keep "ToGetter - "
     strncpy(header + 11, header_tuple->value->cstring, 16);
+    new_list = true;
   }
   if (items_tuple) {
     // data format: num_items | items | names
-    num_items = items_tuple->value->data[0];
+    if(num_items != items_tuple->value->data[0]) {
+      num_items = items_tuple->value->data[0];
+      new_list = true;
+    }
     free(items);
     items = malloc(items_tuple->length - 1);
     memcpy(items, items_tuple->value->data + 1, items_tuple->length - 1);
@@ -123,12 +124,19 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   }
   
   menu_layer_reload_data(menu_layer);
-  menu_layer_set_selected_index(menu_layer, (MenuIndex) { .row = 0, .section = 0 }, MenuRowAlignCenter, true);
+  if(new_list) {
+    menu_layer_set_selected_index(menu_layer, (MenuIndex) { .row = 0, .section = 0 }, MenuRowAlignCenter, true);
+  }
   layer_mark_dirty(menu_layer_get_layer(menu_layer));
 }
 
 static void in_dropped_handler(AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Dropped!");
+}
+
+static void periodic_refresh(void *data) {
+  send_index(-2);
+  app_timer_register(15000, periodic_refresh, NULL);
 }
 
 static void app_message_init(void) {
@@ -171,6 +179,9 @@ void window_load(Window *window) {
   
   // Start messaging
   app_message_init();
+  
+  // Start timer for periodic refresh
+  app_timer_register(15000, periodic_refresh, NULL);
 }
 
 void window_unload(Window *window) {

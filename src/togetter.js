@@ -1,9 +1,19 @@
 /* global removeDiacritics */
 
+var REST_ENDPOINT = "http://to-get.appspot.com/api/";
+var CONFIG_URL = "http://dain.se/pebble.html";  // TODO: Move to appspot
+var TYPE_GROUP = "group";
+var TYPE_LIST = "list";
 var COLLECTED_MASK = 0x80;
 
-var settings = JSON.parse(localStorage.settings || '{"groupId": "", "listId": ""}');
+var settings = JSON.parse(localStorage.settings || '{"groupId": ""}');
 var cache = JSON.parse(localStorage.cache || '{}');
+/*
+ * cache keys:
+ *   current: object // Metadata of current list or group
+ *   lastData: string  // JSON string of current list or group
+ *   lastMsg: object  // JSON string of last Pebble message
+ */
 
 function commitSettings() {
   console.log("Save settings: "+JSON.stringify(settings));
@@ -15,10 +25,15 @@ function commitCache() {
   localStorage.cache = JSON.stringify(cache);
 }
 
+function clearCache() {
+  cache = {};
+  commitCache();
+}
+
 function showList(tries) {
-  var msg = JSON.parse(cache.lastMsg || "{}");
+  var msg = cache.lastMsg;
   if(msg) {
-    console.log("Send message: "+cache.lastMsg);
+    console.log("Send message: "+JSON.stringify(msg));
     Pebble.sendAppMessage(msg, function(e) {
       // Success
     }, function(e) {
@@ -37,33 +52,12 @@ function showList(tries) {
   }
 }
 
-function updateList(json) {
-  var data = JSON.parse(json);
-  if(cache.current != json) {
-    cache.current = json;
-    packList(data);
-  }
-}
-
-function updateGroup(json) {
-  console.log("updateGroup: "+json);
-  var data = JSON.parse(json);
-  if(cache.current != json) {
-    cache.current = json;
-    packGroup(data);
-  }
-}
-
-//var groupId = "YY8h5rM2Z";
-//var listId = "gkI3qzYzX";
-
 function cleanValue(value) {
   return removeDiacritics(value).substr(0, 16);
 }
 
 // Pack items list into binary representation (num_items | struct ListItem* | names)
-function pack(label, items, labelKey, metadata) {
-  var oldData = cache.lastMsg || "";
+function pack(items, labelKey, metadata) {
   var data = [items.length];
   var names = "";
   var offset = 0;
@@ -74,29 +68,61 @@ function pack(label, items, labelKey, metadata) {
     offset = names.length;
   }
   data.push(names);
-  
-  cache.lastMsg = JSON.stringify({
-    label: cleanValue(label),
-    items: data
-  });
-  
-  console.log("packed: "+cache.lastMsg);
-  
-  if(oldData != cache.lastMsg) {
-    commitCache();
-    showList();
+  return data;
+}
+
+function msgFromList(list) {
+  return {
+    label: cleanValue(list.label),
+    items: pack(list.items, "item", function(item) { return (item.collected ? COLLECTED_MASK : 0) | item.amount; })
+  };
+}
+
+function msgFromGroup(group) {
+  return {
+    label: group.label,
+    items: pack(group.lists, "label", function(list) { return 0; })
+  };
+}
+
+function refreshCurrent() {
+  if(cache.current) {
+    httpRequest(REST_ENDPOINT+cache.current.path, "GET", function(json) {
+      if(cache.lastData != json) {
+        cache.lastData = json;
+        var data = JSON.parse(json);
+        cache.lastMsg = cache.current.type == TYPE_GROUP ? msgFromGroup(data) : msgFromList(data);
+        commitCache();
+        showList();
+      }
+    }, function(err_code) {
+
+    });
   }
 }
 
-function packList(list) {
-  pack(list.label, list.items, "item", function(item) { return (item.collected ? COLLECTED_MASK : 0) | item.amount; });
+function selectGroup(groupId) {
+  cache.current = {
+    type: TYPE_GROUP,
+    groupId: groupId,
+    path: groupId+"/"
+  };
+  commitCache();
+  refreshCurrent();
 }
 
-function packGroup(group) {
-  pack(group.label, group.lists, "label", function(list) { return 0; });
+function selectList(groupId, listId) {
+  cache.current = {
+    type: TYPE_LIST,
+    groupId: groupId,
+    listId: listId,
+    path: groupId+"/lists/"+listId+"/"
+  };
+  commitCache();
+  refreshCurrent();
 }
 
-function httpRequest(url, method, cb) {
+function httpRequest(url, method, success, error) {
   console.log(method+" "+url);
   var req = new XMLHttpRequest();
   req.open(method, url, true);
@@ -104,9 +130,14 @@ function httpRequest(url, method, cb) {
     if (req.readyState == 4) {
       if(req.status == 200) {
         console.log("Success: "+req.responseText);
-        cb(req.responseText);
+        if(success) {
+          success(req.responseText);
+        }
       } else {
         console.log("Error: "+req.status);
+        if(error) {
+          error(req.status);
+        }
       }
     }
   };
@@ -115,35 +146,23 @@ function httpRequest(url, method, cb) {
 }
 
 function updateItem(item) {
-  var url ="http://to-get.appspot.com/api/"+settings.groupId+"/lists/"+settings.listId+"/";
+  var url = REST_ENDPOINT+cache.current.path;
   url += "?action=update&item="+item.item+"&collected="+JSON.stringify(item.collected);
   httpRequest(url, "POST", function(resp) {
     console.log("Item updated: "+resp);
+  }, function(err_code) {
+    
   });
 }
 
-function refreshList() {
-  var url = "http://to-get.appspot.com/api/"+settings.groupId+"/lists/"+settings.listId+"/";
-  httpRequest(url, "GET", updateList);
-}
-
-function refreshGroup() {
-  var url = "http://to-get.appspot.com/api/"+settings.groupId+"/";
-  httpRequest(url, "GET", updateGroup);
-}
+/*
+ * Event handlers
+ */
 
 Pebble.addEventListener("ready", function(e) {
   console.log("connect: " + e.ready);
-  cache = {};
-  commitCache();
   showList();
-  if(settings.listId) {
-    console.log("refresh list");
-    refreshList();
-  } else {
-    console.log("refresh group");
-    refreshGroup();
-  }
+  refreshCurrent();
 });
 
 Pebble.addEventListener("appmessage", function(e) {
@@ -151,25 +170,23 @@ Pebble.addEventListener("appmessage", function(e) {
   var index = e.payload.select;
   if(index == -1) {
     console.log("Show group");
-    settings.listId = "";
-    commitSettings();
-    refreshGroup();
+    selectGroup(settings.groupId);
+  } else if(index == -2) {
+    refreshCurrent();
   } else {
-    console.log("Selected item: "+cache.current);
-    var data = JSON.parse(cache.current);
-    if(settings.listId) {
+    console.log("Selected item: "+cache.lastData);
+    var data = JSON.parse(cache.lastData);
+    if(cache.current.type == TYPE_LIST) {
       console.log("(un)check item");
       var item = data.items[index];
       var collected = !item.collected;
       item.collected = collected;
-      cache.current = JSON.stringify(data);
+      cache.lastData = JSON.stringify(data);
       commitCache();
       updateItem(item);
     } else {
       console.log("Show sublist");
-      settings.listId = data.lists[index].id;
-      commitSettings();
-      refreshList();
+      selectList(settings.groupId, data.lists[index].id);
     }
   }
 });
@@ -177,20 +194,16 @@ Pebble.addEventListener("appmessage", function(e) {
 // Configuration
 Pebble.addEventListener("showConfiguration", function(e) {
   console.log("show configuration");
-  //TODO: Move page to to-get.appspot.com
-  Pebble.openURL("http://dain.se/pebble.html#"+JSON.stringify(settings));
+  Pebble.openURL(CONFIG_URL+"#"+JSON.stringify(settings));
 });
 
 Pebble.addEventListener("webviewclosed", function(e) {
   console.log("configuration closed");
-  settings = JSON.parse(decodeURIComponent(e.response));
-  commitSettings();
-  //TODO: Clear cache if groupId changed.
-  if(settings.listId) {
-    console.log("refresh list");
-    refreshList();
-  } else {
-    console.log("refresh group");
-    refreshGroup();
+  var newSettings = JSON.parse(decodeURIComponent(e.response));
+  if(newSettings.groupId != settings.groupId) {
+    settings.groupId = newSettings.groupId;
+    commitSettings();
+    clearCache();
+    selectGroup(settings.groupId);
   }
 });
