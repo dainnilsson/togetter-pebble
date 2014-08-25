@@ -11,18 +11,7 @@
     "longName": "ToGetter",
     "projectType": "native",
     "resources": {
-        "media": [
-            {
-                "file": "images/box-checked.png",
-                "name": "IMAGE_MENU_ICON_CHECKED",
-                "type": "png"
-            },
-            {
-                "file": "images/box-empty.png",
-                "name": "IMAGE_MENU_ICON_UNCHECKED",
-                "type": "png"
-            }
-        ]
+        "media": []
     },
     "shortName": "ToGetter",
     "uuid": "4c8a4698-ee62-47df-a733-37cb006c426d",
