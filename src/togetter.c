@@ -46,9 +46,6 @@ static void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, ui
 
 // This is the menu item draw callback where you specify what each item should look like
 static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
-  // TODO: Show amount.
-  // TODO: Decrease font and show more rows on screen.
-  // TODO: Make icons smaller.
   if(num_items == 0) {
     menu_cell_basic_draw(ctx, cell_layer, "[EMPTY]", NULL, NULL);
     return;
@@ -90,22 +87,23 @@ static void send_index(uint8_t index) {
 
 // Here we capture when a user selects a menu item
 static void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  ListItem* item = &items[cell_index->row];
+  if(num_items > 0) {
+    ListItem* item = &items[cell_index->row];
+    send_index(cell_index->row);
 
-  if(item->combined == 0) {
-    // List select: Do nothing...
-  } else {
-    // Item select
-    item->combined = item->combined ^ COLLECTED_MASK;
+    if(item->combined == 0) {
+      // List select: Do nothing...
+    } else {
+      // Item select: Toggle collected.
+      item->combined = item->combined ^ COLLECTED_MASK;
 
-    if((COLLECTED_MASK & item->combined) != 0) {
-      menu_layer_set_selected_next(menu_layer, false, MenuRowAlignCenter, true);
+      if((COLLECTED_MASK & item->combined) != 0) {
+        menu_layer_set_selected_next(menu_layer, false, MenuRowAlignCenter, true);
+      }
+
+      layer_mark_dirty(menu_layer_get_layer(menu_layer));
     }
-
-    layer_mark_dirty(menu_layer_get_layer(menu_layer));
   }
-
-  send_index(cell_index->row);
 }
 
 //Long click select

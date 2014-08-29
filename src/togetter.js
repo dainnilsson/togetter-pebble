@@ -2,6 +2,8 @@
 
 var REST_ENDPOINT = "http://to-get.appspot.com/api/";
 var CONFIG_URL = "http://dain.se/pebble.html";  // TODO: Move to appspot
+var CONFIG_VERSION = 1;
+
 var TYPE_GROUP = "group";
 var TYPE_LIST = "list";
 var COLLECTED_MASK = 0x80;
@@ -53,7 +55,13 @@ function showList(tries) {
 }
 
 function cleanValue(value) {
-  return removeDiacritics(value).substr(0, 16);
+  return value.substr(0, 16);
+  //return removeDiacritics(value).substr(0, 16);
+}
+
+//Get size in bytes of string
+function byteLength(str) {
+  return encodeURIComponent(str).split(/%(?:u[0-9A-F]{2})?[0-9A-F]{2}|./).length - 1;
 }
 
 // Pack items list into binary representation (num_items | struct ListItem* | names)
@@ -65,7 +73,7 @@ function pack(items, labelKey, metadata) {
     var item = items[i];
     data = data.concat([offset, metadata(item)]);
     names += cleanValue(item[labelKey]) + '\0';
-    offset = names.length;
+    offset = byteLength(names);
   }
   data.push(names);
   return data;
@@ -147,7 +155,7 @@ function httpRequest(url, method, success, error) {
 
 function updateItem(item) {
   var url = REST_ENDPOINT+cache.current.path;
-  url += "?action=update&item="+item.item+"&collected="+JSON.stringify(item.collected);
+  url += "?action=update&item="+encodeURIComponent(item.item)+"&collected="+JSON.stringify(item.collected);
   httpRequest(url, "POST", function(resp) {
     console.log("Item updated: "+resp);
   }, function(err_code) {
@@ -194,6 +202,7 @@ Pebble.addEventListener("appmessage", function(e) {
 // Configuration
 Pebble.addEventListener("showConfiguration", function(e) {
   console.log("show configuration");
+  settings.version = CONFIG_VERSION;
   Pebble.openURL(CONFIG_URL+"#"+JSON.stringify(settings));
 });
 
