@@ -1,5 +1,3 @@
-/* global removeDiacritics */
-
 var REST_ENDPOINT = "http://to-get.appspot.com/api/";
 var CONFIG_URL = "http://dain.se/pebble.html";  // TODO: Move to appspot
 var CONFIG_VERSION = 1;
@@ -176,10 +174,10 @@ Pebble.addEventListener("ready", function(e) {
 Pebble.addEventListener("appmessage", function(e) {
   console.log("Got message: "+JSON.stringify(e.payload));
   var index = e.payload.select;
-  if(index == -1) {
+  if(index == 255) {
     console.log("Show group");
     selectGroup(settings.groupId);
-  } else if(index == -2) {
+  } else if(index == 254) {
     refreshCurrent();
   } else {
     console.log("Selected item: "+cache.lastData);

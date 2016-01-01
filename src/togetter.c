@@ -55,16 +55,25 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
   uint8_t amount = ~COLLECTED_MASK & item->combined;
   
   GRect rect = (GRect){ .origin = GPointZero, .size = layer_get_frame((Layer*) cell_layer).size };
-  graphics_context_set_text_color(ctx, GColorBlack);
+  if(menu_cell_layer_is_highlighted(cell_layer)) {
+    graphics_context_set_text_color(ctx, GColorWhite);
+  } else {
+    graphics_context_set_text_color(ctx, GColorBlack);
+  }
   graphics_draw_text(ctx, names + item->offset, item_font, rect, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
   if(amount > 1) {
     char* amount_str = "00";
-    snprintf(amount_str, 2, "%d", amount);
+    snprintf(amount_str, 3, "%d", amount);
     graphics_draw_text(ctx, amount_str, item_font, rect, GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
   }
   if(collected) {
     rect.origin.y = 12;
     rect.size.h = 3;
+    if(menu_cell_layer_is_highlighted(cell_layer)) {
+      graphics_context_set_fill_color(ctx, GColorWhite);
+    } else {
+      graphics_context_set_fill_color(ctx, GColorBlack);
+    }
     graphics_fill_rect(ctx, rect, 0, GCornerNone);
   }
 }

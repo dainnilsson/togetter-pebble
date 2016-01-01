@@ -13,10 +13,15 @@
     "resources": {
         "media": []
     },
+    "sdkVersion": "3",
     "shortName": "ToGetter",
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk"
+    ],
     "uuid": "4c8a4698-ee62-47df-a733-37cb006c426d",
-    "versionCode": 1,
-    "versionLabel": "0.1",
+    "versionLabel": "0.2",
     "watchapp": {
         "watchface": false
     }
